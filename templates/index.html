@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email Verification</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100 flex items-center justify-center h-screen">
+    <div class="w-full max-w-xs">
+        <form id="emailForm" class="bg-white shadow-md rounded px-8 pt-6 pb-8 mb-4">
+            <div class="mb-4">
+                <label class="block text-gray-700 text-sm font-bold mb-2" for="email">Enter your email:</label>
+                <input class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" id="email" name="email" type="email" placeholder="Email">
+            </div>
+            <div class="flex items-center justify-between">
+                <button id="verifyButton" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline" type="submit">
+                    Verify Email
+                </button>
+                <div id="loadingIndicator" class="hidden">
+                    <svg class="animate-spin h-5 w-5 mr-3 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 4.418 3.582 8 8 8v-4c-1.654 0-3.154-.64-4.294-1.709l1.292-1.292zm16.412-1.292A7.96 7.96 0 0120 12h-4c0 4.418 3.582 8 8 8v-4c-1.654 0-3.154-.64-4.294-1.709l1.292-1.292z"></path>
+                    </svg>
+                    <span class="text-blue-500">Verifying...</span>
+                </div>
+            </div>
+        </form>
+        <div id="result" class="text-center"></div>
+    </div>
+
+    <script>
+        document.getElementById('emailForm').addEventListener('submit', async function(event) {
+            event.preventDefault();
+            document.getElementById('verifyButton').classList.add('hidden');
+            document.getElementById('loadingIndicator').classList.remove('hidden');
+
+            const formData = new FormData(this);
+            const response = await fetch('/verify_email', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await response.json();
+
+            document.getElementById('loadingIndicator').classList.add('hidden');
+            document.getElementById('verifyButton').classList.remove('hidden');
+
+            let resultHtml = '';
+            if (data.status === 'success') {
+                if (data.message === 'Valid') {
+                    resultHtml = '<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-green-500 inline-block" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg> Email is valid';
+                } else {
+                    resultHtml = '<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-red-500 inline-block" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg> Email is invalid';
+                }
+            } else {
+                resultHtml = '<span class="text-red-500">Error: ' + data.message + '</span>';
+            }
+            document.getElementById('result').innerHTML = resultHtml;
+        });
+    </script>
+</body>
+</html>
