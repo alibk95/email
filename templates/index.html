@@ -8,12 +8,19 @@
 </head>
 <body class="bg-gray-100 flex items-center justify-center h-screen">
     <div class="w-full max-w-xs">
-        <form id="emailForm" class="bg-white shadow-md rounded px-8 pt-6 pb-8 mb-4">
-            <div class="mb-4">
+        <form id="emailForm" class="bg-white shadow-md rounded px-8 pt-6 pb-8 mb-4" enctype="multipart/form-data">
+            <div id="emailInput" class="mb-4">
                 <label class="block text-gray-700 text-sm font-bold mb-2" for="email">Enter your email:</label>
                 <input class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" id="email" name="email" type="email" placeholder="Email">
             </div>
+            <div id="fileInput" class="hidden mb-4">
+                <label class="block text-gray-700 text-sm font-bold mb-2" for="file">Upload CSV file:</label>
+                <input class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" id="file" name="file" type="file">
+            </div>
             <div class="flex items-center justify-between">
+                <button id="toggleModeButton" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline" type="button">
+                    Batch Mode
+                </button>
                 <button id="verifyButton" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline" type="submit">
                     Verify Email
                 </button>
@@ -30,32 +37,90 @@
     </div>
 
     <script>
+        document.getElementById('toggleModeButton').addEventListener('click', function() {
+            const emailInput = document.getElementById('emailInput');
+            const fileInput = document.getElementById('fileInput');
+    
+            if (emailInput.classList.contains('hidden')) {
+                emailInput.classList.remove('hidden');
+                fileInput.classList.add('hidden');
+                this.textContent = 'Batch Mode';
+            } else {
+                emailInput.classList.add('hidden');
+                fileInput.classList.remove('hidden');
+                this.textContent = 'Single Mode';
+            }
+        });
+    
         document.getElementById('emailForm').addEventListener('submit', async function(event) {
             event.preventDefault();
-            document.getElementById('verifyButton').classList.add('hidden');
-            document.getElementById('loadingIndicator').classList.remove('hidden');
-
             const formData = new FormData(this);
-            const response = await fetch('/verify_email', {
-                method: 'POST',
-                body: formData
-            });
-            const data = await response.json();
-
-            document.getElementById('loadingIndicator').classList.add('hidden');
-            document.getElementById('verifyButton').classList.remove('hidden');
-
-            let resultHtml = '';
-            if (data.status === 'success') {
-                if (data.message === 'Valid') {
-                    resultHtml = '<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-green-500 inline-block" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg> Email is valid';
+    
+            if (document.getElementById('fileInput').classList.contains('hidden')) {
+                // Single mode
+                document.getElementById('verifyButton').classList.add('hidden');
+                document.getElementById('loadingIndicator').classList.remove('hidden');
+    
+                const response = await fetch('/verify_email', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+    
+                document.getElementById('loadingIndicator').classList.add('hidden');
+                document.getElementById('verifyButton').classList.remove('hidden');
+    
+                let resultHtml = '';
+                if (data.status === 'success') {
+                    if (data.message === 'Valid') {
+                        resultHtml = '<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-green-500 inline-block" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg> Email is valid';
+                    } else {
+                        resultHtml = '<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-red-500 inline-block" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg> Email is invalid';
+                    }
                 } else {
-                    resultHtml = '<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-red-500 inline-block" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg> Email is invalid';
+                    resultHtml = '<span class="text-red-500">Error: ' + data.message + '</span>';
                 }
+                document.getElementById('result').innerHTML = resultHtml;
             } else {
-                resultHtml = '<span class="text-red-500">Error: ' + data.message + '</span>';
+                // Batch mode
+                const fileInput = document.getElementById('file');
+                const file = fileInput.files[0];
+                const formData = new FormData();
+                formData.append('file', file);
+                
+                document.getElementById('verifyButton').classList.add('hidden');
+                document.getElementById('loadingIndicator').classList.remove('hidden');
+    
+                const response = await fetch('/verify_emails_from_csv', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.blob();
+    
+                document.getElementById('loadingIndicator').classList.add('hidden');
+                document.getElementById('verifyButton').classList.remove('hidden');
+    
+                if (data.type === 'application/json') {
+                    const reader = new FileReader();
+                    reader.onload = function () {
+                        const jsonData = JSON.parse(reader.result);
+                        if (jsonData.status === 'error') {
+                            alert('Error: ' + jsonData.message);
+                        }
+                    };
+                    reader.readAsText(data);
+                } else {
+                    const url = window.URL.createObjectURL(data);
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = url;
+                    a.download = 'validated_emails.csv';
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                }
             }
-            document.getElementById('result').innerHTML = resultHtml;
         });
     </script>
 </body>
