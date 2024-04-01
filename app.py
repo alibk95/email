@@ -1,46 +1,67 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_file
+import pandas as pd
 import re
 import smtplib
 import dns.resolver
+import io
+import sys
+import os
 
 app = Flask(__name__)
 
+PY3 = sys.version_info[0] == 3
+
+# Function to verify single email address
 def verify_email_address(email):
-    # Address used for SMTP MAIL FROM command
-    fromAddress = 'test@test.com'
-
-    # Email address to verify
-    addressToVerify = email
-
-    # Get domain for DNS lookup
-    splitAddress = addressToVerify.split('@')
-    domain = str(splitAddress[1])
-
     try:
-        # MX record lookup
+        domain = email.split('@')[-1]
         records = dns.resolver.resolve(domain, 'MX')
-        mxRecord = records[0].exchange
-        mxRecord = str(mxRecord)
+        mxRecord = records[0].exchange.to_text()
 
-        # SMTP lib setup
         server = smtplib.SMTP()
-        server.set_debuglevel(0)
-
-        # SMTP Conversation
         server.connect(mxRecord)
         server.helo(server.local_hostname)
-        server.mail(fromAddress)
-        code, _ = server.rcpt(str(addressToVerify))
+        server.mail('test@test.com')
+        code, _ = server.rcpt(email)
         server.quit()
 
-        # Assume SMTP response 250 is success
-        if code == 250:
-            return 'Valid'
-        else:
-            return 'Invalid'
+        return 'Valid' if code == 250 else 'Invalid'
+    except smtplib.SMTPConnectError as e:
+        return f'Connection failed: {str(e)}'
+    except smtplib.SMTPServerDisconnected as e:
+        return f'Server disconnected: {str(e)}'
+    except dns.resolver.NoAnswer as e:
+        return f'No DNS answer for MX record: {str(e)}'
     except Exception as e:
-        print(f"Error verifying email: {str(e)}")
-        return 'Invalid'
+        return f'Error verifying email: {str(e)}'
+
+# Function to verify batch of email addresses from CSV
+def verify_emails_from_csv(csv_file):
+    try:
+        if PY3:
+            csv_data = io.StringIO(csv_file.stream.read().decode("UTF8"), newline=None)
+        else:
+            csv_data = io.StringIO(csv_file.stream.read().decode("UTF8"), newline=None)
+
+        df = pd.read_csv(csv_data)
+
+        if 'email' not in df.columns:
+            return [{'Email': '', 'Result': 'Error: CSV file does not contain "email" column.'}]
+
+        emails = df['email'].tolist()
+        results = []
+
+        for email in emails:
+            email = email.strip()
+            if re.match(r"[^@]+@[^@]+\.[^@]+", email):
+                result = verify_email_address(email)
+                print(email, result)
+                results.append({'Email': email, 'Result': result})
+            else:
+                results.append({'Email': email, 'Result': 'Invalid email format'})
+        return results
+    except Exception as e:
+        return [{'Email': '', 'Result': f'Error verifying emails from CSV: {str(e)}'}]
 
 @app.route('/')
 def index():
@@ -49,13 +70,39 @@ def index():
 @app.route('/verify_email', methods=['POST'])
 def verify_email():
     email = request.form['email']
-
     if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
         return jsonify({'status': 'error', 'message': 'Invalid email address'})
 
     result = verify_email_address(email)
-
     return jsonify({'status': 'success', 'message': result})
+
+@app.route('/verify_emails_from_csv', methods=['POST'])
+def verify_emails_from_csv_route():
+    try:
+        csv_file = request.files['file']
+        if not csv_file:
+            return jsonify({'status': 'error', 'message': 'No file provided'})
+
+        results = verify_emails_from_csv(csv_file)
+
+        # Get the absolute path of the directory where this script resides
+        BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+        print(BASE_DIR)
+        # Save DataFrame to CSV with absolute path
+        csv_path = os.path.join(BASE_DIR, 'validated_emails.csv')
+        df = pd.DataFrame(results)
+        df.to_csv(csv_path, index=False)
+        print(df)
+
+        # Return CSV file as response
+        return send_file(
+            path_or_file=csv_path,
+            as_attachment=True,
+            download_name='validated_emails.csv',
+        )
+        print("done")
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': f'Failed to process CSV file: {str(e)}'})
 
 if __name__ == '__main__':
     app.run(debug=True)
